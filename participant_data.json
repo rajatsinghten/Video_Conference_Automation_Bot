@@ -1,0 +1,9 @@
+{
+    "num_of_attendees": 3,
+    "attendees": ["maheep", "akshat", "aryan"],
+    "previous_tasks": [
+        {"attendee": "maheep", "task": "developing the authentication APIs"},
+        {"attendee": "akshat", "task": "developing the landing page"},
+        {"attendee": "aryan", "task": "developing the figma design for the dashboard"}
+    ]
+}
