@@ -9,37 +9,47 @@ from record_audio import record_audio
 load_dotenv()
 
 # Configure the API key
-genai.configure(api_key = os.getenv('GOOGLE_API_KEY'))
+genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 
 # Initialize the model
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-#path of audio file for transcribing
+# Path of audio file for transcribing
 input_file = "recording.wav"
 
 # Pre-prompt for the bot
 pre_prompt = "Behave as a corporate tech team lead. Analyze the task and the input and ask a relevant follow-up question. Keep the questions very short and simple."
 
 def generate_follow_up_question(conversation_history):
-    combined_history = "\n".join(conversation_history)
-    response = model.generate_content(combined_history)
-    return response.text
+    try:
+        combined_history = "\n".join(conversation_history)
+        response = model.generate_content(combined_history)
+        return response.text
+    except Exception as e:
+        print(f"Error generating follow-up question: {e}")
+        return "Could you clarify that?"
+
+def record_and_transcribe(input_file):
+    try:
+        record_audio(output_file=input_file)
+        return transcribe_audio(input_file)
+    except Exception as e:
+        print(f"Error in recording or transcribing audio: {e}")
+        return None
 
 def read_participant_data(file_path):
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-
-    names = []
-    tasks = []
-
-    # Extract names and tasks into separate lists
-    for entry in data['previous_tasks']:
-        names.append(entry['attendee'])
-        tasks.append(entry['task'])
-
-    # print("Names", names)
-    # print("Tasks", tasks)
-    return names, tasks
+    try:
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        names = [entry['attendee'] for entry in data['previous_tasks']]
+        tasks = [entry['task'] for entry in data['previous_tasks']]
+        return names, tasks
+    except FileNotFoundError:
+        print(f"Error: File {file_path} not found.")
+        return [], []
+    except json.JSONDecodeError as e:
+        print(f"Error reading JSON file: {e}")
+        return [], []
 
 def chat_with_gemini(names, tasks):
     # Opening the meeting
@@ -51,44 +61,35 @@ def chat_with_gemini(names, tasks):
         participant_name = names[idx]
         task = tasks[idx]
 
-        # Start with the attendee
         call_to_attendee = f"Hello {participant_name}. Could you please share your progress on {task}?"
         print(f"AI: {call_to_attendee}")
         text_to_speech(call_to_attendee)
 
-        # Ask for user response
-        record_audio(output_file="recording.wav")
-        user_response = transcribe_audio(input_file)
+        user_response = record_and_transcribe(input_file)
+        if user_response is None:
+            continue
         print(f"{participant_name}: {user_response}")
-        
-        # Conversation history for context
-        conversation_history = [
-            f"instruction: {pre_prompt}",
-            f"Task: {task}",
-            f"User_input: {user_response}"
-        ]
 
-        # Generate and handle follow-up questions in a loop
-        for i in range(2):  # Two iterations for follow-up questions
+        conversation_history = [f"instruction: {pre_prompt}", f"Task: {task}", f"User_input: {user_response}"]
+
+        # Dynamic follow-up question loop
+        while True:
             follow_up_question = generate_follow_up_question(conversation_history)
             print(f"AI: {follow_up_question}")
             text_to_speech(follow_up_question)
             
-            record_audio(output_file="recording.wav")
-            follow_up_response = transcribe_audio(input_file)
+            follow_up_response = record_and_transcribe(input_file)
+            if follow_up_response is None or len(follow_up_response.strip()) == 0:
+                break
             print(f"{participant_name}: {follow_up_response}")
-            # follow_up_response = input(f"Your follow-up response (for {participant_name}): ")
             
-            # Update conversation history
             conversation_history.append(f"AI: {follow_up_question}")
             conversation_history.append(f"User_input: {follow_up_response}")
 
-        # Conclude discussion for this participant
         conclusion = f"Thank you for the update, {participant_name}."
         print(f"AI: {conclusion}")
         text_to_speech(conclusion)
-        
-    # Closing the meeting
+
     closing_remarks = "Thank you all for the updates. This concludes our meeting. Keep up the good work!"
     print(f"AI: {closing_remarks}")
     text_to_speech(closing_remarks)
@@ -98,7 +99,10 @@ def main():
     file_path = 'participant_data.json'
     names, tasks = read_participant_data(file_path)
 
-    chat_with_gemini(names, tasks)
+    if names and tasks:  # Only proceed if data is loaded correctly
+        chat_with_gemini(names, tasks)
+    else:
+        print("No participant data found or error in loading data.")
 
 if __name__ == "__main__":
     main()
